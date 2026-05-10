@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { NavLink, useLocation } from 'react-router-dom'
+import { NavLink } from 'react-router-dom'
 import { getUser } from '../utils/api'
 
 const navItems = [
@@ -11,7 +11,7 @@ const navItems = [
   { path: '/products',  icon: 'bi-capsule',        label: 'Products' },
   { path: '/suppliers', icon: 'bi-truck',          label: 'Suppliers' },
   { section: 'Business' },
-  { path: '/sales',     icon: 'bi-receipt',        label: 'Sales' },          // ← new
+  { path: '/sales',     icon: 'bi-receipt',        label: 'Sales' },
   { path: '/reports',   icon: 'bi-bar-chart-line', label: 'Reports' },
   { path: '/users',     icon: 'bi-people',         label: 'Users', roles: ['owner'] },
   { section: 'Account' },
@@ -21,7 +21,6 @@ const navItems = [
 
 export default function Sidebar() {
   const [collapsed, setCollapsed] = useState(false)
-  const location = useLocation()
   const user = getUser()
 
   const filteredItems = navItems.filter(item => {
@@ -31,11 +30,21 @@ export default function Sidebar() {
 
   return (
     <aside className={`sidebar ${collapsed ? 'collapsed' : ''}`}>
+
       {/* Logo */}
       <div className="sidebar-logo">
-        <div className="logo-icon">
-          <i className="bi bi-capsule-pill" />
-        </div>
+        <img
+          src="/pharmacy-logo.png"
+          alt="PharmaTrack"
+          className="logo-icon"
+          style={{
+            width: 36, height: 36,
+            objectFit: 'contain',
+            borderRadius: 0,        /* override the blue square style */
+            background: 'none',
+            flexShrink: 0
+          }}
+        />
         <span className="logo-text">PharmaTrack</span>
       </div>
 
