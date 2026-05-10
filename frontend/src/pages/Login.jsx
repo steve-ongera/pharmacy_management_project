@@ -27,10 +27,14 @@ export default function Login() {
   return (
     <div className="login-page">
       <div className="login-card">
+
+        {/* Logo */}
         <div className="login-logo">
-          <div className="icon">
-            <i className="bi bi-capsule-pill" />
-          </div>
+          <img
+            src="/pharmacy-logo.png"
+            alt="PharmaTrack Logo"
+            style={{ height: 52, width: 'auto', objectFit: 'contain' }}
+          />
           <div>
             <div className="name">PharmaTrack</div>
             <div className="tagline">Pharmacy Management System</div>
@@ -41,7 +45,7 @@ export default function Login() {
           Sign in to your account
         </h2>
         <p style={{ color: 'var(--gray-400)', fontSize: 13, marginBottom: 28 }}>
-          Welcome back — enter your credentials below
+          Enter your credentials to access the system
         </p>
 
         {error && (
@@ -58,7 +62,7 @@ export default function Login() {
               <i className="bi bi-person input-prefix" />
               <input
                 className="form-control"
-                placeholder="your.username"
+                placeholder="Enter your username"
                 value={form.username}
                 onChange={e => setForm({ ...form, username: e.target.value })}
                 required autoFocus
@@ -74,17 +78,23 @@ export default function Login() {
                 <input
                   className="form-control"
                   type={showPass ? 'text' : 'password'}
-                  placeholder="••••••••"
+                  placeholder="Enter your password"
                   value={form.password}
                   onChange={e => setForm({ ...form, password: e.target.value })}
                   required
                   style={{ paddingRight: 40 }}
                 />
               </div>
-              <button type="button"
+              <button
+                type="button"
                 onClick={() => setShowPass(!showPass)}
-                style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)',
-                  background: 'none', border: 'none', cursor: 'pointer', color: 'var(--gray-400)' }}>
+                style={{
+                  position: 'absolute', right: 12, top: '50%',
+                  transform: 'translateY(-50%)',
+                  background: 'none', border: 'none',
+                  cursor: 'pointer', color: 'var(--gray-400)'
+                }}
+              >
                 <i className={`bi ${showPass ? 'bi-eye-slash' : 'bi-eye'}`} />
               </button>
             </div>
@@ -104,12 +114,11 @@ export default function Login() {
           </button>
         </form>
 
-        <div style={{ marginTop: 32, padding: 16, background: 'var(--gray-50)', borderRadius: 'var(--radius)', fontSize: 12, color: 'var(--gray-500)' }}>
-          <div style={{ fontWeight: 600, marginBottom: 4 }}>Demo Credentials:</div>
-          <div>Username: <strong>admin</strong> · Password: <strong>admin123</strong></div>
+        <div style={{ textAlign: 'center', marginTop: 28, fontSize: 12, color: 'var(--gray-400)' }}>
+          Having trouble signing in? Contact your system administrator.
         </div>
 
-        <div style={{ textAlign: 'center', marginTop: 20, fontSize: 12, color: 'var(--gray-400)' }}>
+        <div style={{ textAlign: 'center', marginTop: 12, fontSize: 12, color: 'var(--gray-300)' }}>
           🇰🇪 Built for Kenyan Pharmacies
         </div>
       </div>
