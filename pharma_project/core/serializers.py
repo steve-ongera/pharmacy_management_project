@@ -111,7 +111,7 @@ class ProductListSerializer(serializers.ModelSerializer):
     class Meta:
         model = Product
         fields = ['id', 'slug', 'name', 'generic_name', 'barcode',
-                  'category_name', 'unit', 'selling_price',
+                  'category_name', 'unit', 'selling_price', 'image',   # ← added image
                   'stock_quantity', 'is_low_stock', 'requires_prescription']
 
 
@@ -176,9 +176,10 @@ class SaleCreateSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Sale
-        fields = ['customer', 'payment_method', 'mpesa_reference',
+        fields = ['id', 'slug', 'customer', 'payment_method', 'mpesa_reference',   # ← added id, slug
                   'subtotal', 'discount', 'tax', 'total_amount',
                   'amount_paid', 'change_given', 'notes', 'items']
+        read_only_fields = ['id', 'slug']
 
     def create(self, validated_data):
         items_data = validated_data.pop('items')
@@ -188,7 +189,6 @@ class SaleCreateSerializer(serializers.ModelSerializer):
             product = item_data['product']
             qty = item_data['quantity']
             SaleItem.objects.create(sale=sale, **item_data)
-            # Deduct stock
             product.stock_quantity = max(0, product.stock_quantity - qty)
             product.save(update_fields=['stock_quantity'])
         return sale

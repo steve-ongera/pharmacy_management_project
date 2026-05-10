@@ -108,66 +108,238 @@ class CategoryAdmin(admin.ModelAdmin):
 
 # ── Product ───────────────────────────────────────────────────────────────────
 
+from django.contrib import admin
+from django.db.models import F
+from django.utils import timezone
+from django.utils.html import format_html
+
+from .models import Product
+
+
 class StockStatusFilter(admin.SimpleListFilter):
-    title        = "stock status"
+    title = "stock status"
     parameter_name = "stock_status"
 
     def lookups(self, request, model_admin):
         return [
-            ("out",  "Out of Stock"),
-            ("low",  "Low Stock"),
-            ("ok",   "In Stock"),
+            ("out", "Out of Stock"),
+            ("low", "Low Stock"),
+            ("ok", "In Stock"),
             ("expired", "Expired"),
         ]
 
     def queryset(self, request, queryset):
         today = timezone.now().date()
+
         if self.value() == "out":
             return queryset.filter(stock_quantity=0)
+
         if self.value() == "low":
-            return queryset.filter(stock_quantity__gt=0, stock_quantity__lte=F("reorder_level"))
+            return queryset.filter(
+                stock_quantity__gt=0,
+                stock_quantity__lte=F("reorder_level")
+            )
+
         if self.value() == "ok":
-            return queryset.filter(stock_quantity__gt=F("reorder_level"))
+            return queryset.filter(
+                stock_quantity__gt=F("reorder_level")
+            )
+
         if self.value() == "expired":
             return queryset.filter(expiry_date__lt=today)
+
         return queryset
+
+
+def stock_badge(stock, reorder):
+    if stock <= 0:
+        colour = "#dc2626"
+        label = "Out of Stock"
+
+    elif stock <= reorder:
+        colour = "#d97706"
+        label = "Low Stock"
+
+    else:
+        colour = "#16a34a"
+        label = "In Stock"
+
+    return format_html(
+        """
+        <span style="
+            background:{};
+            color:white;
+            padding:4px 10px;
+            border-radius:12px;
+            font-size:12px;
+            font-weight:600;
+        ">
+            {} ({})
+        </span>
+        """,
+        colour,
+        label,
+        stock
+    )
 
 
 @admin.register(Product)
 class ProductAdmin(admin.ModelAdmin):
-    list_display  = (
-        "name", "category", "supplier", "unit",
-        "buying_price", "selling_price", "margin_pct",
-        "stock_col", "expiry_date", "requires_prescription", "is_active",
+
+    list_display = (
+        "name",
+        "category",
+        "supplier",
+        "unit",
+        "buying_price",
+        "selling_price",
+        "margin_pct",
+        "stock_col",
+        "expiry_date",
+        "requires_prescription",
+        "is_active",
     )
-    list_filter   = ("is_active", "requires_prescription", "unit", "category", StockStatusFilter)
-    search_fields = ("name", "generic_name", "barcode")
-    prepopulated_fields = {"slug": ("name",)}
-    ordering      = ("name",)
-    readonly_fields = ("created_at", "updated_at", "profit_margin", "is_low_stock", "is_expired")
-    autocomplete_fields = ("category", "supplier")
+
+    list_filter = (
+        "is_active",
+        "requires_prescription",
+        "unit",
+        "category",
+        StockStatusFilter,
+    )
+
+    search_fields = (
+        "name",
+        "generic_name",
+        "barcode",
+    )
+
+    prepopulated_fields = {
+        "slug": ("name",)
+    }
+
+    ordering = ("name",)
+
+    readonly_fields = (
+        "created_at",
+        "updated_at",
+        "profit_margin",
+        "is_low_stock",
+        "is_expired",
+    )
+
+    autocomplete_fields = (
+        "category",
+        "supplier",
+    )
+
     list_per_page = 40
 
     fieldsets = (
-        (None, {"fields": ("name", "slug", "generic_name", "barcode", "is_active")}),
-        ("Classification", {"fields": ("category", "supplier", "unit", "requires_prescription")}),
-        ("Pricing", {"fields": ("buying_price", "selling_price", "profit_margin")}),
-        ("Stock", {"fields": ("stock_quantity", "reorder_level", "is_low_stock")}),
-        ("Details", {"fields": ("description", "expiry_date", "is_expired", "image")}),
-        ("Timestamps", {"fields": ("created_at", "updated_at"), "classes": ("collapse",)}),
+        (
+            None,
+            {
+                "fields": (
+                    "name",
+                    "slug",
+                    "generic_name",
+                    "barcode",
+                    "is_active",
+                )
+            },
+        ),
+
+        (
+            "Classification",
+            {
+                "fields": (
+                    "category",
+                    "supplier",
+                    "unit",
+                    "requires_prescription",
+                )
+            },
+        ),
+
+        (
+            "Pricing",
+            {
+                "fields": (
+                    "buying_price",
+                    "selling_price",
+                    "profit_margin",
+                )
+            },
+        ),
+
+        (
+            "Stock",
+            {
+                "fields": (
+                    "stock_quantity",
+                    "reorder_level",
+                    "is_low_stock",
+                )
+            },
+        ),
+
+        (
+            "Details",
+            {
+                "fields": (
+                    "description",
+                    "expiry_date",
+                    "is_expired",
+                    "image",
+                )
+            },
+        ),
+
+        (
+            "Timestamps",
+            {
+                "fields": (
+                    "created_at",
+                    "updated_at",
+                ),
+                "classes": ("collapse",),
+            },
+        ),
     )
 
     @admin.display(description="Stock")
     def stock_col(self, obj):
-        return stock_badge(obj.stock_quantity, obj.reorder_level)
+        return stock_badge(
+            obj.stock_quantity,
+            obj.reorder_level
+        )
 
     @admin.display(description="Margin %")
     def margin_pct(self, obj):
-        m = obj.profit_margin
-        colour = "#16a34a" if m >= 20 else "#d97706" if m >= 10 else "#dc2626"
-        return format_html('<span style="color:{};font-weight:600">{:.1f}%</span>', colour, m)
 
-    actions = ["mark_inactive", "mark_active"]
+        try:
+            m = float(obj.profit_margin or 0)
+        except (TypeError, ValueError):
+            m = 0
+
+        colour = (
+            "#16a34a" if m >= 20
+            else "#d97706" if m >= 10
+            else "#dc2626"
+        )
+
+        formatted_margin = f"{m:.1f}%"
+
+        return format_html(
+            '<span style="color:{};font-weight:600">{}</span>',
+            colour,
+            formatted_margin
+        )
+
+    actions = [
+        "mark_inactive",
+        "mark_active",
+    ]
 
     @admin.action(description="Mark selected products as inactive")
     def mark_inactive(self, request, queryset):
@@ -176,8 +348,8 @@ class ProductAdmin(admin.ModelAdmin):
     @admin.action(description="Mark selected products as active")
     def mark_active(self, request, queryset):
         queryset.update(is_active=True)
-
-
+        
+        
 # ── Customer ──────────────────────────────────────────────────────────────────
 
 @admin.register(Customer)

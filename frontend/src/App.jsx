@@ -11,6 +11,7 @@ import Reports from './pages/Reports'
 import Users from './pages/Users'
 import Profile from './pages/Profile'
 import Settings from './pages/Settings'
+import Sales from './pages/Sales'
 import { getToken, getUser } from './utils/api'
 
 function PrivateRoute({ children }) {
@@ -38,6 +39,7 @@ export default function App() {
           <Route path="products" element={<Products />} />
           <Route path="suppliers" element={<Suppliers />} />
           <Route path="reports" element={<Reports />} />
+          <Route path="sales" element={<Sales />} />
           <Route path="users" element={<Users />} />
           <Route path="profile" element={<Profile />} />
           <Route path="settings" element={<Settings />} />

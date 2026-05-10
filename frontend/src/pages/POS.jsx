@@ -1,5 +1,14 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { api, fmt } from '../utils/api'
+
+const MEDIA_URL = import.meta.env.VITE_MEDIA_URL || 'http://localhost:8000'
+const PLACEHOLDER = `${MEDIA_URL}/media/profuct-image.webp`
+
+function getImageUrl(image) {
+  if (!image) return PLACEHOLDER
+  if (image.startsWith('http')) return image
+  return `${MEDIA_URL}/media/${image}`
+}
 
 function Receipt({ sale, onClose }) {
   return (
@@ -43,7 +52,11 @@ function Receipt({ sale, onClose }) {
             <div className="receipt-row receipt-total"><span>TOTAL:</span><span>{fmt.currency(sale.total_amount)}</span></div>
             <div className="receipt-row"><span>Paid ({sale.payment_method?.toUpperCase()}):</span><span>{fmt.currency(sale.amount_paid)}</span></div>
             {sale.change_given > 0 && <div className="receipt-row"><span>Change:</span><span>{fmt.currency(sale.change_given)}</span></div>}
-            {sale.mpesa_reference && <div className="receipt-row" style={{ fontSize: 10 }}><span>M-Pesa Ref:</span><span>{sale.mpesa_reference}</span></div>}
+            {sale.mpesa_reference && (
+              <div className="receipt-row" style={{ fontSize: 10 }}>
+                <span>M-Pesa Ref:</span><span>{sale.mpesa_reference}</span>
+              </div>
+            )}
             <hr className="receipt-divider" style={{ marginTop: 16 }} />
             <div style={{ textAlign: 'center', fontSize: 10, color: '#666' }}>
               Thank you for shopping with us!<br />
@@ -55,9 +68,7 @@ function Receipt({ sale, onClose }) {
           <button className="btn btn-outline btn-sm" onClick={() => window.print()}>
             <i className="bi bi-printer" /> Print
           </button>
-          <button className="btn btn-primary btn-sm" onClick={onClose}>
-            New Sale
-          </button>
+          <button className="btn btn-primary btn-sm" onClick={onClose}>New Sale</button>
         </div>
       </div>
     </div>
@@ -81,7 +92,11 @@ export default function POS() {
   const [error, setError] = useState('')
   const searchRef = useRef()
 
-  // Load products on search
+  useEffect(() => {
+    api.products.list({ is_active: true }).then(r => setProducts(r.results || r))
+    searchRef.current?.focus()
+  }, [])
+
   useEffect(() => {
     const t = setTimeout(() => {
       if (search.length >= 1) {
@@ -93,32 +108,32 @@ export default function POS() {
     return () => clearTimeout(t)
   }, [search])
 
-  useEffect(() => {
-    api.products.list({ is_active: true }).then(r => setProducts(r.results || r))
-    searchRef.current?.focus()
-  }, [])
-
   const addToCart = (product) => {
     if (product.stock_quantity <= 0) return
     setCart(prev => {
       const existing = prev.find(i => i.product.id === product.id)
       if (existing) {
         if (existing.quantity >= product.stock_quantity) return prev
-        return prev.map(i => i.product.id === product.id ? { ...i, quantity: i.quantity + 1 } : i)
+        return prev.map(i =>
+          i.product.id === product.id ? { ...i, quantity: i.quantity + 1 } : i
+        )
       }
       return [...prev, { product, quantity: 1, unit_price: parseFloat(product.selling_price) }]
     })
   }
 
   const removeFromCart = (productId) => setCart(prev => prev.filter(i => i.product.id !== productId))
+
   const updateQty = (productId, delta) => {
-    setCart(prev => prev.map(i => {
-      if (i.product.id !== productId) return i
-      const newQty = i.quantity + delta
-      if (newQty <= 0) return null
-      if (newQty > i.product.stock_quantity) return i
-      return { ...i, quantity: newQty }
-    }).filter(Boolean))
+    setCart(prev =>
+      prev.map(i => {
+        if (i.product.id !== productId) return i
+        const newQty = i.quantity + delta
+        if (newQty <= 0) return null
+        if (newQty > i.product.stock_quantity) return i
+        return { ...i, quantity: newQty }
+      }).filter(Boolean)
+    )
   }
 
   const subtotal = cart.reduce((s, i) => s + i.unit_price * i.quantity, 0)
@@ -132,23 +147,23 @@ export default function POS() {
   }
 
   const initiatePayment = async () => {
-    if (paymentMethod === 'mpesa') {
-      if (!mpesaPhone) { setError('Enter M-Pesa phone number'); return }
-      setMpesaLoading(true)
-      try {
-        const res = await api.mpesa.stkPush(mpesaPhone, total.toFixed(2))
-        if (res.dev_mode) {
-          alert(`[DEV MODE] ${res.message}\nIn production, customer will receive STK push.`)
-        }
-      } catch (e) { setError(e.message) }
-      finally { setMpesaLoading(false) }
-    }
+    if (!mpesaPhone) { setError('Enter M-Pesa phone number'); return }
+    setMpesaLoading(true)
+    try {
+      const res = await api.mpesa.stkPush(mpesaPhone, total.toFixed(2))
+      if (res.dev_mode) {
+        alert(`[DEV MODE] ${res.message}\nIn production, customer will receive STK push.`)
+      }
+    } catch (e) { setError(e.message) }
+    finally { setMpesaLoading(false) }
   }
 
   const completeSale = async () => {
     if (cart.length === 0) { setError('Add items to cart first'); return }
-    if (paymentMethod === 'cash' && parseFloat(amountPaid || 0) < total) {
-      setError('Amount paid is less than total'); return
+    const paid = Math.round(parseFloat(amountPaid || 0) * 100)
+    const totalCents = Math.round(total * 100)
+    if (paymentMethod === 'cash' && paid < totalCents) {
+      setError(`Amount paid is less than total (${fmt.currency(total)})`); return
     }
     setLoading(true); setError('')
     try {
@@ -170,10 +185,15 @@ export default function POS() {
           discount: '0.00',
         }))
       }
+
+      // ── FIX: create returns slug now; use it directly ──────────────
       const sale = await api.sales.create(payload)
-      const fullSale = await api.sales.receipt(sale.slug)
+      const slug = sale.slug  // no longer undefined
+      const fullSale = await api.sales.receipt(slug)
+
       setCompletedSale(fullSale)
       setCart([]); setCustomer(null); setAmountPaid(''); setDiscount(0); setMpesaPhone('')
+      setCustomerSearch('')
     } catch (e) { setError(e.message) }
     finally { setLoading(false) }
   }
@@ -184,20 +204,57 @@ export default function POS() {
 
   return (
     <div className="pos-layout">
-      {/* Products panel */}
+      {/* ── Products panel ─────────────────────────────────────────── */}
       <div className="pos-products">
         <div className="search-bar mb-4">
           <i className="bi bi-search" />
-          <input ref={searchRef} className="form-control w-full" placeholder="Search medicine by name or barcode…"
-            value={search} onChange={e => setSearch(e.target.value)} />
+          <input
+            ref={searchRef}
+            className="form-control w-full"
+            placeholder="Search medicine by name or barcode…"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+          />
         </div>
+
         <div className="product-grid">
           {products.map(p => (
-            <div key={p.id}
+            <div
+              key={p.id}
               className={`product-card ${p.stock_quantity <= 0 ? 'out-of-stock' : ''}`}
-              onClick={() => addToCart(p)}>
+              onClick={() => addToCart(p)}
+            >
+              {/* ── Product image ── */}
+              <div style={{
+                width: '100%',
+                height: 80,
+                marginBottom: 8,
+                borderRadius: 'var(--radius)',
+                overflow: 'hidden',
+                background: 'var(--gray-100)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}>
+                <img
+                  src={getImageUrl(p.image)}
+                  alt={p.name}
+                  onError={e => { e.currentTarget.src = PLACEHOLDER }}
+                  style={{
+                    width: '100%',
+                    height: '100%',
+                    objectFit: 'cover',
+                    opacity: p.stock_quantity <= 0 ? 0.4 : 1,
+                  }}
+                />
+              </div>
+
               <div className="product-card-name">{p.name}</div>
-              {p.generic_name && <div style={{ fontSize: 11, color: 'var(--gray-400)', marginBottom: 4 }}>{p.generic_name}</div>}
+              {p.generic_name && (
+                <div style={{ fontSize: 11, color: 'var(--gray-400)', marginBottom: 4 }}>
+                  {p.generic_name}
+                </div>
+              )}
               <div className="product-card-price">{fmt.currency(p.selling_price)}</div>
               <div className="product-card-stock">
                 {p.stock_quantity > 0
@@ -207,7 +264,9 @@ export default function POS() {
               </div>
               {p.requires_prescription && (
                 <div style={{ marginTop: 4 }}>
-                  <span className="badge badge-warning" style={{ fontSize: 10 }}><i className="bi bi-file-earmark-medical" /> Rx</span>
+                  <span className="badge badge-warning" style={{ fontSize: 10 }}>
+                    <i className="bi bi-file-earmark-medical" /> Rx
+                  </span>
                 </div>
               )}
             </div>
@@ -215,7 +274,7 @@ export default function POS() {
         </div>
       </div>
 
-      {/* Cart panel */}
+      {/* ── Cart panel ─────────────────────────────────────────────── */}
       <div className="card pos-cart" style={{ borderRadius: 'var(--radius-lg)', padding: 0 }}>
         {/* Cart header */}
         <div style={{ padding: '16px 16px 12px', borderBottom: '1px solid var(--gray-100)' }}>
@@ -223,39 +282,53 @@ export default function POS() {
             <i className="bi bi-cart3" style={{ marginRight: 8, color: 'var(--primary)' }} />
             Cart ({cart.length} item{cart.length !== 1 ? 's' : ''})
           </div>
+
           {/* Customer lookup */}
           <div style={{ position: 'relative' }}>
             <div className="search-bar">
               <i className="bi bi-person-circle" />
-              <input className="form-control w-full" style={{ fontSize: 13 }}
+              <input
+                className="form-control w-full"
+                style={{ fontSize: 13 }}
                 placeholder="Search customer (optional)…"
                 value={customerSearch}
-                onChange={e => { setCustomerSearch(e.target.value); searchCustomers(e.target.value) }} />
+                onChange={e => { setCustomerSearch(e.target.value); searchCustomers(e.target.value) }}
+              />
             </div>
             {customerResults.length > 0 && (
-              <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, background: 'white',
-                border: '1px solid var(--gray-200)', borderRadius: 'var(--radius)', boxShadow: 'var(--shadow-lg)', zIndex: 10 }}>
+              <div style={{
+                position: 'absolute', top: '100%', left: 0, right: 0,
+                background: 'white', border: '1px solid var(--gray-200)',
+                borderRadius: 'var(--radius)', boxShadow: 'var(--shadow-lg)', zIndex: 10,
+              }}>
                 {customerResults.map(c => (
-                  <div key={c.id} style={{ padding: '8px 12px', cursor: 'pointer', fontSize: 13 }}
-                    onClick={() => { setCustomer(c); setCustomerSearch(c.name); setCustomerResults([]) }}>
+                  <div
+                    key={c.id}
+                    style={{ padding: '8px 12px', cursor: 'pointer', fontSize: 13 }}
+                    onClick={() => { setCustomer(c); setCustomerSearch(c.name); setCustomerResults([]) }}
+                  >
                     <strong>{c.name}</strong> · {c.phone}
                   </div>
                 ))}
               </div>
             )}
           </div>
+
           {customer && (
             <div style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: 8 }}>
               <span className="badge badge-primary"><i className="bi bi-person-check" /> {customer.name}</span>
-              <button className="btn btn-ghost btn-sm" style={{ padding: '0 4px' }}
-                onClick={() => { setCustomer(null); setCustomerSearch('') }}>
+              <button
+                className="btn btn-ghost btn-sm"
+                style={{ padding: '0 4px' }}
+                onClick={() => { setCustomer(null); setCustomerSearch('') }}
+              >
                 <i className="bi bi-x" />
               </button>
             </div>
           )}
         </div>
 
-        {/* Items */}
+        {/* Cart items */}
         <div className="cart-items">
           {cart.length === 0 ? (
             <div style={{ textAlign: 'center', padding: 40, color: 'var(--gray-300)' }}>
@@ -264,9 +337,22 @@ export default function POS() {
             </div>
           ) : cart.map(item => (
             <div key={item.product.id} className="cart-item">
+              {/* Thumbnail in cart */}
+              <img
+                src={getImageUrl(item.product.image)}
+                alt={item.product.name}
+                onError={e => { e.currentTarget.src = PLACEHOLDER }}
+                style={{
+                  width: 36, height: 36, borderRadius: 6,
+                  objectFit: 'cover', flexShrink: 0,
+                  background: 'var(--gray-100)',
+                }}
+              />
               <div style={{ flex: 1 }}>
                 <div className="cart-item-name">{item.product.name}</div>
-                <div style={{ fontSize: 11, color: 'var(--gray-400)' }}>{fmt.currency(item.unit_price)} each</div>
+                <div style={{ fontSize: 11, color: 'var(--gray-400)' }}>
+                  {fmt.currency(item.unit_price)} each
+                </div>
               </div>
               <div className="qty-control">
                 <button className="qty-btn" onClick={() => updateQty(item.product.id, -1)}>−</button>
@@ -274,8 +360,11 @@ export default function POS() {
                 <button className="qty-btn" onClick={() => updateQty(item.product.id, 1)}>+</button>
               </div>
               <div className="cart-item-price">{fmt.currency(item.unit_price * item.quantity)}</div>
-              <button className="btn btn-ghost btn-sm" style={{ padding: '2px 6px', color: 'var(--danger)' }}
-                onClick={() => removeFromCart(item.product.id)}>
+              <button
+                className="btn btn-ghost btn-sm"
+                style={{ padding: '2px 6px', color: 'var(--danger)' }}
+                onClick={() => removeFromCart(item.product.id)}
+              >
                 <i className="bi bi-trash3" />
               </button>
             </div>
@@ -284,7 +373,11 @@ export default function POS() {
 
         {/* Totals & payment */}
         <div style={{ padding: '12px 16px', borderTop: '1px solid var(--gray-100)' }}>
-          {error && <div className="alert alert-danger" style={{ marginBottom: 10, padding: '8px 12px' }}>{error}</div>}
+          {error && (
+            <div className="alert alert-danger" style={{ marginBottom: 10, padding: '8px 12px' }}>
+              {error}
+            </div>
+          )}
 
           <div style={{ marginBottom: 12 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginBottom: 6 }}>
@@ -293,20 +386,31 @@ export default function POS() {
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
               <span style={{ fontSize: 13, color: 'var(--gray-500)', flex: 1 }}>Discount (KES)</span>
-              <input className="form-control" type="number" min="0" style={{ width: 90, fontSize: 13, padding: '4px 8px' }}
-                value={discount} onChange={e => setDiscount(e.target.value)} />
+              <input
+                className="form-control" type="number" min="0"
+                style={{ width: 90, fontSize: 13, padding: '4px 8px' }}
+                value={discount}
+                onChange={e => setDiscount(e.target.value)}
+              />
             </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 800, fontSize: 16, marginTop: 8, padding: '8px 0', borderTop: '2px solid var(--gray-200)' }}>
+            <div style={{
+              display: 'flex', justifyContent: 'space-between',
+              fontWeight: 800, fontSize: 16, marginTop: 8,
+              padding: '8px 0', borderTop: '2px solid var(--gray-200)',
+            }}>
               <span>Total</span>
               <span style={{ color: 'var(--primary)' }}>{fmt.currency(total)}</span>
             </div>
           </div>
 
-          {/* Payment method */}
+          {/* Payment method buttons */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginBottom: 12 }}>
             {['cash', 'mpesa', 'card', 'insurance'].map(m => (
-              <button key={m} className={`btn btn-sm ${paymentMethod === m ? 'btn-primary' : 'btn-outline'}`}
-                onClick={() => setPaymentMethod(m)}>
+              <button
+                key={m}
+                className={`btn btn-sm ${paymentMethod === m ? 'btn-primary' : 'btn-outline'}`}
+                onClick={() => setPaymentMethod(m)}
+              >
                 <i className={`bi ${m === 'cash' ? 'bi-cash' : m === 'mpesa' ? 'bi-phone' : m === 'card' ? 'bi-credit-card' : 'bi-shield-check'}`} />
                 {m === 'mpesa' ? 'M-Pesa' : m.charAt(0).toUpperCase() + m.slice(1)}
               </button>
@@ -315,8 +419,12 @@ export default function POS() {
 
           {paymentMethod === 'cash' && (
             <div className="form-group">
-              <input className="form-control" type="number" placeholder="Amount paid (KES)"
-                value={amountPaid} onChange={e => setAmountPaid(e.target.value)} />
+              <input
+                className="form-control" type="number"
+                placeholder="Amount paid (KES)"
+                value={amountPaid}
+                onChange={e => setAmountPaid(e.target.value)}
+              />
               {parseFloat(amountPaid) >= total && total > 0 && (
                 <div style={{ marginTop: 4, fontSize: 13, color: 'var(--success)', fontWeight: 600 }}>
                   Change: {fmt.currency(Math.max(0, change))}
@@ -328,17 +436,35 @@ export default function POS() {
           {paymentMethod === 'mpesa' && (
             <div>
               <div className="form-group">
-                <input className="form-control" placeholder="Phone: 254712345678"
-                  value={mpesaPhone} onChange={e => setMpesaPhone(e.target.value)} />
+                <input
+                  className="form-control"
+                  placeholder="Phone: 254712345678"
+                  value={mpesaPhone}
+                  onChange={e => setMpesaPhone(e.target.value)}
+                />
               </div>
-              <button className="btn btn-outline btn-sm w-full mb-3" onClick={initiatePayment} disabled={mpesaLoading}>
-                {mpesaLoading ? <><div className="spinner" style={{ width: 14, height: 14 }} /> Sending…</> : <><i className="bi bi-phone" /> Send STK Push</>}
+              <button
+                className="btn btn-outline btn-sm w-full mb-3"
+                onClick={initiatePayment}
+                disabled={mpesaLoading}
+              >
+                {mpesaLoading
+                  ? <><div className="spinner" style={{ width: 14, height: 14 }} /> Sending…</>
+                  : <><i className="bi bi-phone" /> Send STK Push</>
+                }
               </button>
             </div>
           )}
 
-          <button className="btn btn-primary btn-lg w-full" onClick={completeSale} disabled={loading || cart.length === 0}>
-            {loading ? <><div className="spinner" style={{ width: 18, height: 18 }} /> Processing…</> : <><i className="bi bi-check-circle" /> Complete Sale · {fmt.currency(total)}</>}
+          <button
+            className="btn btn-primary btn-lg w-full"
+            onClick={completeSale}
+            disabled={loading || cart.length === 0}
+          >
+            {loading
+              ? <><div className="spinner" style={{ width: 18, height: 18 }} /> Processing…</>
+              : <><i className="bi bi-check-circle" /> Complete Sale · {fmt.currency(total)}</>
+            }
           </button>
         </div>
       </div>
