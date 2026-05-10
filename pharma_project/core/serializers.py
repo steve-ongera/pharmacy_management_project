@@ -83,6 +83,7 @@ class CategorySerializer(serializers.ModelSerializer):
 # ─── Product ─────────────────────────────────────────────────────────────────
 
 class ProductSerializer(serializers.ModelSerializer):
+    image = serializers.ImageField(required=False, allow_null=True)
     category_name = serializers.CharField(source='category.name', read_only=True)
     supplier_name = serializers.CharField(source='supplier.name', read_only=True)
     profit_margin = serializers.ReadOnlyField()
@@ -104,16 +105,24 @@ class ProductSerializer(serializers.ModelSerializer):
 
 
 class ProductListSerializer(serializers.ModelSerializer):
-    """Lighter serializer for lists / POS search."""
     category_name = serializers.CharField(source='category.name', read_only=True)
+    supplier_name = serializers.CharField(source='supplier.name', read_only=True)
     is_low_stock = serializers.ReadOnlyField()
+    is_expired = serializers.ReadOnlyField()
 
     class Meta:
         model = Product
-        fields = ['id', 'slug', 'name', 'generic_name', 'barcode',
-                  'category_name', 'unit', 'selling_price', 'image',   # ← added image
-                  'stock_quantity', 'is_low_stock', 'requires_prescription']
-
+        fields = [
+            'id', 'slug', 'name', 'generic_name', 'barcode',
+            'category', 'category_name',           # ← add category (ID)
+            'supplier', 'supplier_name',            # ← add supplier (ID)
+            'unit', 'buying_price', 'selling_price', # ← add buying_price
+            'image', 'stock_quantity', 'reorder_level',
+            'expiry_date',                          # ← add expiry_date
+            'requires_prescription', 'is_active',
+            'is_low_stock', 'is_expired',
+            'created_at', 'updated_at',
+        ]
 
 # ─── Customer ────────────────────────────────────────────────────────────────
 

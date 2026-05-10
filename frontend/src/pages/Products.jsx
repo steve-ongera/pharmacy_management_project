@@ -89,16 +89,16 @@ const FORM_TABS = [
 ]
 
 function ProductModal({ product, categories, suppliers, onClose, onSave }) {
-  const [tab, setTab]           = useState('basic')
-  const [form, setForm]         = useState(() =>
+  const [tab, setTab]               = useState('basic')
+  const [form, setForm]             = useState(() =>
     product
       ? { ...EMPTY_FORM, ...product, category: product.category ?? '', supplier: product.supplier ?? '' }
       : { ...EMPTY_FORM }
   )
-  const [imgFile, setImgFile]   = useState(null)
+  const [imgFile, setImgFile]       = useState(null)
   const [imgPreview, setImgPreview] = useState(product ? getImageUrl(product.image) : null)
-  const [loading, setLoading]   = useState(false)
-  const [errors, setErrors]     = useState({})
+  const [loading, setLoading]       = useState(false)
+  const [errors, setErrors]         = useState({})
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
 
@@ -116,23 +116,42 @@ function ProductModal({ product, categories, suppliers, onClose, onSave }) {
     setLoading(true)
     try {
       if (imgFile) {
+        // ── New image selected → multipart FormData ──────────────────────────
         const fd = new FormData()
-        Object.entries(form).forEach(([k, v]) => {
+        // Exclude the 'image' key from form state (it's a URL string, not a file)
+        // and append the actual file separately
+        const { image: _imageUrl, ...formWithoutImage } = form
+        Object.entries(formWithoutImage).forEach(([k, v]) => {
           if (v !== null && v !== undefined && v !== '') fd.append(k, v)
         })
         fd.append('image', imgFile)
+
         const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:8000/api'
         const token   = localStorage.getItem('access_token')
         const url     = product ? `${apiBase}/products/${product.slug}/` : `${apiBase}/products/`
-        const res     = await fetch(url, { method: product ? 'PATCH' : 'POST', headers: { Authorization: `Bearer ${token}` }, body: fd })
-        if (!res.ok) { const err = await res.json(); throw new Error(Object.values(err).flat().join(', ')) }
+        const res     = await fetch(url, {
+          method: product ? 'PATCH' : 'POST',
+          headers: { Authorization: `Bearer ${token}` },
+          body: fd,
+        })
+        if (!res.ok) {
+          const err = await res.json()
+          throw new Error(Object.values(err).flat().join(', '))
+        }
       } else {
-        const payload = { ...form }
+        // ── No new image → JSON payload; never send the image field ──────────
+        // Destructure out 'image' so it's never included in the JSON body.
+        // Sending the existing image URL string causes DRF's ImageField to
+        // reject with "The submitted data was not a file."
+        const { image: _imageUrl, ...rest } = form
+        const payload = { ...rest }
         if (!payload.category)    delete payload.category
         if (!payload.supplier)    delete payload.supplier
         if (!payload.barcode)     delete payload.barcode
         if (!payload.expiry_date) delete payload.expiry_date
-        product ? await api.products.update(product.slug, payload) : await api.products.create(payload)
+        product
+          ? await api.products.update(product.slug, payload)
+          : await api.products.create(payload)
       }
       onSave()
     } catch (e) {
@@ -301,9 +320,9 @@ function ProductModal({ product, categories, suppliers, onClose, onSave }) {
               {margin !== null && (
                 <div style={{ display: 'flex', borderRadius: 'var(--radius)', overflow: 'hidden', border: '1px solid var(--gray-200)', marginBottom: 20 }}>
                   {[
-                    { label: 'Cost Price',  value: fmt.currency(form.buying_price),  icon: 'bi-tag',            bg: 'var(--gray-50)',     textColor: 'var(--gray-800)' },
-                    { label: 'Profit / Unit', value: fmt.currency(profit),           icon: 'bi-graph-up-arrow', bg: parseFloat(margin) >= 0 ? 'var(--success-light)' : 'var(--danger-light)', textColor: parseFloat(margin) >= 0 ? '#065f46' : '#991b1b' },
-                    { label: 'Margin',      value: `${margin}%`,                     icon: 'bi-percent',        bg: 'var(--gray-50)',     textColor: 'var(--gray-800)' },
+                    { label: 'Cost Price',    value: fmt.currency(form.buying_price),  icon: 'bi-tag',            bg: 'var(--gray-50)',     textColor: 'var(--gray-800)' },
+                    { label: 'Profit / Unit', value: fmt.currency(profit),             icon: 'bi-graph-up-arrow', bg: parseFloat(margin) >= 0 ? 'var(--success-light)' : 'var(--danger-light)', textColor: parseFloat(margin) >= 0 ? '#065f46' : '#991b1b' },
+                    { label: 'Margin',        value: `${margin}%`,                     icon: 'bi-percent',        bg: 'var(--gray-50)',     textColor: 'var(--gray-800)' },
                   ].map((s, i, arr) => (
                     <div key={i} style={{ flex: 1, padding: '12px 14px', textAlign: 'center', background: s.bg, borderRight: i < arr.length - 1 ? '1px solid var(--gray-200)' : 'none' }}>
                       <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--gray-400)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>
@@ -387,9 +406,9 @@ function ProductModal({ product, categories, suppliers, onClose, onSave }) {
 
 // ─── Product Detail Modal ─────────────────────────────────────────────────────
 function ProductDetail({ product, onClose, onEdit }) {
-  const imgUrl = getImageUrl(product.image)
-  const margin = calcMargin(product.buying_price, product.selling_price)
-  const days   = daysUntilExpiry(product.expiry_date)
+  const imgUrl  = getImageUrl(product.image)
+  const margin  = calcMargin(product.buying_price, product.selling_price)
+  const days    = daysUntilExpiry(product.expiry_date)
   const stockPct = product.reorder_level > 0
     ? Math.min(100, Math.round((product.stock_quantity / (product.reorder_level * 3)) * 100))
     : 100
@@ -490,10 +509,10 @@ function ProductDetail({ product, onClose, onEdit }) {
               <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--gray-400)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 4 }}>
                 <i className="bi bi-info-circle me-1" />Product Info
               </div>
-              <KVRow label="Supplier" value={product.supplier_name} />
-              <KVRow label="Unit"     value={product.unit ? product.unit.charAt(0).toUpperCase() + product.unit.slice(1) : ''} />
+              <KVRow label="Supplier"     value={product.supplier_name} />
+              <KVRow label="Unit"         value={product.unit ? product.unit.charAt(0).toUpperCase() + product.unit.slice(1) : ''} />
               <KVRow label="Prescription" value={product.requires_prescription ? 'Required (Rx)' : 'Not required (OTC)'} />
-              <KVRow label="Slug" value={<code style={{ fontSize: 12, background: 'var(--gray-100)', padding: '1px 6px', borderRadius: 4 }}>{product.slug}</code>} />
+              <KVRow label="Slug"         value={<code style={{ fontSize: 12, background: 'var(--gray-100)', padding: '1px 6px', borderRadius: 4 }}>{product.slug}</code>} />
             </div>
             <div>
               <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--gray-400)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 4 }}>
@@ -593,9 +612,9 @@ export default function Products() {
   const loadAll = useCallback(() => {
     setLoading(true)
     const params = {}
-    if (search)       params.search  = search
-    if (catFilter)    params.category = catFilter
-    if (activeFilter) params.is_active = activeFilter
+    if (search)       params.search       = search
+    if (catFilter)    params.category     = catFilter
+    if (activeFilter) params.is_active    = activeFilter
     if (rxFilter)     params.requires_prescription = rxFilter
     Promise.all([
       api.products.list(params),
@@ -826,7 +845,8 @@ export default function Products() {
                           <i className="bi bi-pencil" />
                         </button>
                         <button
-                          className="btn btn-sm" title="Delete" style={{ padding: '4px 9px', background: 'var(--danger-light)', color: 'var(--danger)', borderColor: 'var(--danger-light)' }}
+                          className="btn btn-sm" title="Delete"
+                          style={{ padding: '4px 9px', background: 'var(--danger-light)', color: 'var(--danger)', borderColor: 'var(--danger-light)' }}
                           onClick={() => setDeleting(p)}
                         >
                           <i className="bi bi-trash3" />
