@@ -5,17 +5,18 @@ import { getUser } from '../utils/api'
 const navItems = [
   { section: 'Main' },
   { path: '/dashboard', icon: 'bi-speedometer2', label: 'Dashboard' },
-  { path: '/pos', icon: 'bi-cart3', label: 'Point of Sale' },
+  { path: '/pos',       icon: 'bi-cart3',         label: 'Point of Sale' },
   { section: 'Inventory' },
-  { path: '/inventory', icon: 'bi-boxes', label: 'Inventory' },
-  { path: '/products', icon: 'bi-capsule', label: 'Products' },
-  { path: '/suppliers', icon: 'bi-truck', label: 'Suppliers' },
+  { path: '/inventory', icon: 'bi-boxes',          label: 'Inventory' },
+  { path: '/products',  icon: 'bi-capsule',        label: 'Products' },
+  { path: '/suppliers', icon: 'bi-truck',          label: 'Suppliers' },
   { section: 'Business' },
-  { path: '/reports', icon: 'bi-bar-chart-line', label: 'Reports' },
-  { path: '/users', icon: 'bi-people', label: 'Users', roles: ['owner'] },
+  { path: '/sales',     icon: 'bi-receipt',        label: 'Sales' },          // ← new
+  { path: '/reports',   icon: 'bi-bar-chart-line', label: 'Reports' },
+  { path: '/users',     icon: 'bi-people',         label: 'Users', roles: ['owner'] },
   { section: 'Account' },
-  { path: '/profile', icon: 'bi-person-circle', label: 'Profile' },
-  { path: '/settings', icon: 'bi-gear', label: 'Settings' },
+  { path: '/profile',   icon: 'bi-person-circle',  label: 'Profile' },
+  { path: '/settings',  icon: 'bi-gear',           label: 'Settings' },
 ]
 
 export default function Sidebar() {
