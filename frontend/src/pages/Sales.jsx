@@ -2,73 +2,97 @@ import { useState, useEffect, useCallback } from 'react'
 import { api, fmt } from '../utils/api'
 import * as XLSX from 'xlsx'
 
-// ─── PDF generation (pure JS, no external lib needed) ────────────────────────
-function generatePDF(sales, filters) {
-  const { jsPDF } = window.jspdf || {}
-  if (!jsPDF) {
-    // fallback: print-friendly HTML in new tab
-    const rows = sales.map(s => `
-      <tr>
-        <td>${s.receipt_number}</td>
-        <td>${fmt.datetime(s.created_at)}</td>
-        <td>${s.customer_name || '—'}</td>
-        <td>${s.served_by_name || '—'}</td>
-        <td style="text-transform:capitalize">${s.payment_method}</td>
-        <td style="text-align:right">${fmt.currency(s.total_amount)}</td>
-        <td><span style="padding:2px 8px;border-radius:12px;font-size:11px;background:${
-          s.status === 'completed' ? '#dcfce7' : s.status === 'refunded' ? '#fef9c3' : '#fee2e2'
-        };color:${
-          s.status === 'completed' ? '#166534' : s.status === 'refunded' ? '#854d0e' : '#991b1b'
-        }">${s.status}</span></td>
-      </tr>`).join('')
-    const html = `<!DOCTYPE html><html><head><title>Sales Report</title>
-    <style>
-      body{font-family:sans-serif;padding:24px;color:#111}
-      h2{margin-bottom:4px}p{color:#666;margin-bottom:16px;font-size:13px}
-      table{width:100%;border-collapse:collapse;font-size:13px}
-      th{background:#f1f5f9;padding:8px 12px;text-align:left;border-bottom:2px solid #e2e8f0}
-      td{padding:8px 12px;border-bottom:1px solid #f1f5f9}
-      @media print{button{display:none}}
-    </style></head><body>
-    <button onclick="window.print()" style="margin-bottom:16px;padding:8px 16px;background:#2563eb;color:white;border:none;border-radius:6px;cursor:pointer">🖨 Print / Save PDF</button>
-    <h2>Sales Report</h2>
-    <p>Generated ${new Date().toLocaleString('en-KE')} · ${sales.length} records</p>
-    <table><thead><tr>
-      <th>Receipt</th><th>Date</th><th>Customer</th><th>Served By</th><th>Payment</th><th>Total</th><th>Status</th>
-    </tr></thead><tbody>${rows}</tbody></table>
-    </body></html>`
-    const w = window.open('', '_blank')
-    w.document.write(html)
-    w.document.close()
-    return
-  }
+// ─── PDF export (print-ready HTML tab) ───────────────────────────────────────
+function generatePDF(sales) {
+  const rows = sales.map(s => `
+    <tr>
+      <td>${s.receipt_number}</td>
+      <td>${fmt.datetime(s.created_at)}</td>
+      <td>${s.customer_name || 'Walk-in'}</td>
+      <td>${s.served_by_name || '—'}</td>
+      <td style="text-transform:capitalize">${s.payment_method === 'mpesa' ? 'M-Pesa' : s.payment_method}</td>
+      <td style="text-align:right">${fmt.currency(s.total_amount)}</td>
+      <td>
+        <span style="padding:2px 10px;border-radius:20px;font-size:11px;font-weight:600;
+          background:${s.status==='completed'?'#d1fae5':s.status==='refunded'?'#fef3c7':'#fee2e2'};
+          color:${s.status==='completed'?'#065f46':s.status==='refunded'?'#92400e':'#991b1b'}">
+          ${s.status.charAt(0).toUpperCase()+s.status.slice(1)}
+        </span>
+      </td>
+    </tr>`).join('')
+
+  const totalRevenue = sales.reduce((s, r) => s + parseFloat(r.total_amount || 0), 0)
+  const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Sales Report</title>
+  <style>
+    body{font-family:'Segoe UI',sans-serif;padding:32px;color:#1e293b;font-size:13px}
+    .header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:24px;padding-bottom:16px;border-bottom:2px solid #e2e8f0}
+    .logo{font-size:20px;font-weight:800;color:#2563eb}
+    .meta{text-align:right;color:#64748b;font-size:12px}
+    .stats{display:flex;gap:24px;margin-bottom:20px}
+    .stat{background:#f8fafc;border-radius:8px;padding:12px 20px;border:1px solid #e2e8f0}
+    .stat-val{font-size:20px;font-weight:800;color:#0f172a}
+    .stat-lbl{font-size:11px;color:#94a3b8;margin-top:2px}
+    table{width:100%;border-collapse:collapse}
+    th{background:#f1f5f9;padding:9px 12px;text-align:left;font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.05em;border-bottom:2px solid #e2e8f0}
+    td{padding:9px 12px;border-bottom:1px solid #f1f5f9;vertical-align:middle}
+    tr:hover td{background:#f8fafc}
+    .print-btn{margin-bottom:20px;padding:9px 20px;background:#2563eb;color:white;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer}
+    @media print{.print-btn{display:none}body{padding:16px}}
+  </style></head><body>
+  <button class="print-btn" onclick="window.print()">🖨 Print / Save as PDF</button>
+  <div class="header">
+    <div>
+      <div class="logo">💊 PharmaTrack</div>
+      <div style="color:#64748b;font-size:12px;margin-top:4px">Sales Report</div>
+    </div>
+    <div class="meta">
+      Generated: ${new Date().toLocaleString('en-KE')}<br>
+      Records: ${sales.length}
+    </div>
+  </div>
+  <div class="stats">
+    <div class="stat"><div class="stat-val">${sales.length}</div><div class="stat-lbl">Total Transactions</div></div>
+    <div class="stat"><div class="stat-val">${fmt.currency(totalRevenue)}</div><div class="stat-lbl">Total Revenue</div></div>
+    <div class="stat"><div class="stat-val">${sales.filter(s=>s.status==='completed').length}</div><div class="stat-lbl">Completed</div></div>
+    <div class="stat"><div class="stat-val">${sales.filter(s=>s.status==='refunded').length}</div><div class="stat-lbl">Refunded</div></div>
+  </div>
+  <table><thead><tr>
+    <th>Receipt #</th><th>Date &amp; Time</th><th>Customer</th><th>Served By</th><th>Payment</th><th style="text-align:right">Total</th><th>Status</th>
+  </tr></thead><tbody>${rows}</tbody></table>
+  </body></html>`
+
+  const w = window.open('', '_blank')
+  w.document.write(html)
+  w.document.close()
 }
 
-// ─── Status badge ─────────────────────────────────────────────────────────────
-const STATUS_STYLES = {
-  completed: { bg: '#dcfce7', color: '#166534', label: 'Completed' },
-  pending:   { bg: '#fef3c7', color: '#92400e', label: 'Pending' },
-  refunded:  { bg: '#fef9c3', color: '#854d0e', label: 'Refunded' },
-  cancelled: { bg: '#fee2e2', color: '#991b1b', label: 'Cancelled' },
+// ─── Status badge using project badge classes ─────────────────────────────────
+const STATUS_MAP = {
+  completed: 'badge-success',
+  pending:   'badge-warning',
+  refunded:  'badge-warning',
+  cancelled: 'badge-danger',
+}
+const PAYMENT_ICONS = {
+  cash:      'bi-cash-coin',
+  mpesa:     'bi-phone',
+  card:      'bi-credit-card',
+  insurance: 'bi-shield-check',
 }
 
 function StatusBadge({ status }) {
-  const s = STATUS_STYLES[status] || STATUS_STYLES.pending
   return (
-    <span style={{
-      display: 'inline-block', padding: '2px 10px', borderRadius: 20,
-      fontSize: 11, fontWeight: 600, background: s.bg, color: s.color,
-      letterSpacing: '0.3px', textTransform: 'capitalize',
-    }}>{s.label}</span>
+    <span className={`badge ${STATUS_MAP[status] || 'badge-gray'}`}>
+      {status.charAt(0).toUpperCase() + status.slice(1)}
+    </span>
   )
 }
 
 function PaymentBadge({ method }) {
-  const icons = { cash: '💵', mpesa: '📱', card: '💳', insurance: '🛡️' }
   return (
-    <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 13 }}>
-      <span>{icons[method] || '💰'}</span>
-      <span style={{ textTransform: 'capitalize' }}>{method === 'mpesa' ? 'M-Pesa' : method}</span>
+    <span className="badge badge-gray">
+      <i className={`bi ${PAYMENT_ICONS[method] || 'bi-cash'}`} />
+      {method === 'mpesa' ? 'M-Pesa' : method.charAt(0).toUpperCase() + method.slice(1)}
     </span>
   )
 }
@@ -79,119 +103,149 @@ function SaleDetailModal({ slug, onClose }) {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    api.sales.receipt(slug).then(d => { setSale(d); setLoading(false) })
+    api.sales.receipt(slug)
+      .then(d => { setSale(d); setLoading(false) })
+      .catch(() => setLoading(false))
   }, [slug])
 
   return (
-    <div style={{
-      position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)',
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
-      zIndex: 1000, padding: 16,
-    }} onClick={e => e.target === e.currentTarget && onClose()}>
-      <div style={{
-        background: 'white', borderRadius: 16, width: '100%', maxWidth: 520,
-        maxHeight: '90vh', overflow: 'auto', boxShadow: '0 25px 60px rgba(0,0,0,0.2)',
-      }}>
-        {loading ? (
-          <div style={{ padding: 48, textAlign: 'center', color: '#94a3b8' }}>
-            <div style={{ fontSize: 32, marginBottom: 8 }}>⏳</div>Loading…
-          </div>
-        ) : (
-          <>
-            {/* Header */}
-            <div style={{
-              padding: '20px 24px 16px',
-              borderBottom: '1px solid #f1f5f9',
-              display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between',
-            }}>
-              <div>
-                <div style={{ fontWeight: 700, fontSize: 17, color: '#0f172a' }}>
-                  {sale.receipt_number}
-                </div>
-                <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 2 }}>
-                  {fmt.datetime(sale.created_at)}
-                </div>
-              </div>
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                <StatusBadge status={sale.status} />
-                <button onClick={onClose} style={{
-                  background: '#f1f5f9', border: 'none', borderRadius: 8,
-                  width: 32, height: 32, cursor: 'pointer', fontSize: 16,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                }}>✕</button>
-              </div>
-            </div>
+    <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="modal" style={{ maxWidth: 520 }}>
 
-            {/* Meta */}
-            <div style={{
-              padding: '16px 24px', display: 'grid',
-              gridTemplateColumns: '1fr 1fr', gap: 12,
-              borderBottom: '1px solid #f1f5f9',
-            }}>
-              {[
-                ['Customer', sale.customer_name || 'Walk-in'],
-                ['Served By', sale.served_by_name || '—'],
-                ['Payment', sale.payment_method === 'mpesa' ? 'M-Pesa' : sale.payment_method],
-                ['M-Pesa Ref', sale.mpesa_reference || '—'],
-              ].map(([label, val]) => (
-                <div key={label}>
-                  <div style={{ fontSize: 11, color: '#94a3b8', marginBottom: 2, textTransform: 'uppercase', letterSpacing: '0.5px' }}>{label}</div>
-                  <div style={{ fontSize: 13, fontWeight: 600, color: '#334155' }}>{val}</div>
-                </div>
-              ))}
+        {/* Header */}
+        <div className="modal-header">
+          {loading ? (
+            <h3><i className="bi bi-receipt" style={{ marginRight: 8 }} />Loading…</h3>
+          ) : (
+            <div>
+              <h3 style={{ marginBottom: 2 }}>
+                <i className="bi bi-receipt" style={{ marginRight: 8, color: 'var(--primary)' }} />
+                {sale?.receipt_number}
+              </h3>
+              <div className="text-sm text-muted">{fmt.datetime(sale?.created_at)}</div>
+            </div>
+          )}
+          <div className="d-flex align-center gap-2">
+            {sale && <StatusBadge status={sale.status} />}
+            <button className="btn btn-ghost btn-sm" onClick={onClose}>
+              <i className="bi bi-x-lg" />
+            </button>
+          </div>
+        </div>
+
+        {loading ? (
+          <div className="loading-center">
+            <div className="spinner" />
+          </div>
+        ) : sale ? (
+          <>
+            {/* Meta grid */}
+            <div className="modal-body" style={{ paddingBottom: 0 }}>
+              <div className="grid-2" style={{ marginBottom: 0 }}>
+                {[
+                  ['bi-person',        'Customer',   sale.customer_name || 'Walk-in'],
+                  ['bi-person-badge',  'Served By',  sale.served_by_name || '—'],
+                  ['bi-credit-card',   'Payment',    sale.payment_method === 'mpesa' ? 'M-Pesa' : sale.payment_method.charAt(0).toUpperCase() + sale.payment_method.slice(1)],
+                  ['bi-phone',         'M-Pesa Ref', sale.mpesa_reference || '—'],
+                ].map(([icon, label, val]) => (
+                  <div key={label} style={{
+                    background: 'var(--gray-50)', borderRadius: 'var(--radius)',
+                    padding: '10px 12px', border: '1px solid var(--gray-100)',
+                  }}>
+                    <div className="text-sm text-muted" style={{ marginBottom: 3 }}>
+                      <i className={`bi ${icon}`} style={{ marginRight: 4 }} />{label}
+                    </div>
+                    <div style={{ fontWeight: 600, color: 'var(--gray-800)', fontSize: 13 }}>{val}</div>
+                  </div>
+                ))}
+              </div>
             </div>
 
             {/* Items */}
-            <div style={{ padding: '16px 24px', borderBottom: '1px solid #f1f5f9' }}>
-              <div style={{ fontSize: 12, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 10 }}>Items</div>
-              {sale.items?.map((item, i) => (
-                <div key={i} style={{
-                  display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                  padding: '8px 0', borderBottom: i < sale.items.length - 1 ? '1px solid #f8fafc' : 'none',
-                }}>
-                  <div>
-                    <div style={{ fontSize: 13, fontWeight: 600, color: '#1e293b' }}>{item.product_name}</div>
-                    <div style={{ fontSize: 11, color: '#94a3b8' }}>
-                      {item.quantity} × {fmt.currency(item.unit_price)}
-                      {item.product_unit && ` · ${item.product_unit}`}
-                    </div>
-                  </div>
-                  <div style={{ fontWeight: 700, fontSize: 14, color: '#0f172a' }}>
-                    {fmt.currency(item.total_price)}
-                  </div>
-                </div>
-              ))}
+            <div className="modal-body" style={{ paddingTop: 16, paddingBottom: 0 }}>
+              <div className="card-title" style={{ marginBottom: 10 }}>
+                <i className="bi bi-box-seam" style={{ marginRight: 6 }} />Items
+              </div>
+              <div className="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Product</th>
+                      <th style={{ textAlign: 'center' }}>Qty</th>
+                      <th style={{ textAlign: 'right' }}>Unit Price</th>
+                      <th style={{ textAlign: 'right' }}>Total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {sale.items?.map((item, i) => (
+                      <tr key={i}>
+                        <td>
+                          <div style={{ fontWeight: 600, color: 'var(--gray-800)' }}>{item.product_name}</div>
+                          {item.product_unit && <div className="text-sm text-muted">{item.product_unit}</div>}
+                        </td>
+                        <td style={{ textAlign: 'center', fontWeight: 700 }}>{item.quantity}</td>
+                        <td style={{ textAlign: 'right' }}>{fmt.currency(item.unit_price)}</td>
+                        <td style={{ textAlign: 'right', fontWeight: 700 }}>{fmt.currency(item.total_price)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
 
             {/* Totals */}
-            <div style={{ padding: '16px 24px' }}>
-              {[
-                ['Subtotal', fmt.currency(sale.subtotal)],
-                sale.discount > 0 && ['Discount', `-${fmt.currency(sale.discount)}`],
-                sale.tax > 0 && ['Tax', fmt.currency(sale.tax)],
-              ].filter(Boolean).map(([label, val]) => (
-                <div key={label} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginBottom: 6, color: '#64748b' }}>
-                  <span>{label}</span><span>{val}</span>
-                </div>
-              ))}
+            <div className="modal-body" style={{ paddingTop: 16 }}>
               <div style={{
-                display: 'flex', justifyContent: 'space-between',
-                fontWeight: 800, fontSize: 16, color: '#0f172a',
-                padding: '10px 0', borderTop: '2px solid #e2e8f0', marginTop: 6,
+                background: 'var(--gray-50)', borderRadius: 'var(--radius)',
+                padding: '12px 16px', border: '1px solid var(--gray-100)',
               }}>
-                <span>Total</span><span>{fmt.currency(sale.total_amount)}</span>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, color: '#64748b', marginTop: 4 }}>
-                <span>Amount Paid</span><span>{fmt.currency(sale.amount_paid)}</span>
-              </div>
-              {sale.change_given > 0 && (
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, color: '#64748b', marginTop: 4 }}>
-                  <span>Change Given</span><span>{fmt.currency(sale.change_given)}</span>
+                {[
+                  ['Subtotal', fmt.currency(sale.subtotal), false],
+                  sale.discount > 0 && ['Discount', `−${fmt.currency(sale.discount)}`, false],
+                  sale.tax > 0      && ['Tax',      fmt.currency(sale.tax),            false],
+                ].filter(Boolean).map(([label, val]) => (
+                  <div key={label} className="d-flex justify-between" style={{ marginBottom: 6, fontSize: 13, color: 'var(--gray-600)' }}>
+                    <span>{label}</span><span>{val}</span>
+                  </div>
+                ))}
+                <div className="d-flex justify-between" style={{
+                  borderTop: '2px solid var(--gray-200)', paddingTop: 10, marginTop: 6,
+                  fontWeight: 800, fontSize: 16, color: 'var(--gray-900)',
+                }}>
+                  <span>Total</span>
+                  <span className="text-primary">{fmt.currency(sale.total_amount)}</span>
                 </div>
-              )}
+                <div className="d-flex justify-between" style={{ marginTop: 6, fontSize: 13, color: 'var(--gray-500)' }}>
+                  <span>Amount Paid ({sale.payment_method === 'mpesa' ? 'M-Pesa' : sale.payment_method})</span>
+                  <span>{fmt.currency(sale.amount_paid)}</span>
+                </div>
+                {parseFloat(sale.change_given) > 0 && (
+                  <div className="d-flex justify-between" style={{ marginTop: 4, fontSize: 13, color: 'var(--gray-500)' }}>
+                    <span>Change Given</span>
+                    <span>{fmt.currency(sale.change_given)}</span>
+                  </div>
+                )}
+              </div>
             </div>
           </>
+        ) : (
+          <div className="modal-body">
+            <div className="alert alert-danger">
+              <i className="bi bi-exclamation-circle" /> Failed to load sale details.
+            </div>
+          </div>
         )}
+
+        <div className="modal-footer">
+          <button className="btn btn-ghost btn-sm" onClick={onClose}>
+            <i className="bi bi-x" /> Close
+          </button>
+          {sale && (
+            <button className="btn btn-outline btn-sm" onClick={() => window.print()}>
+              <i className="bi bi-printer" /> Print Receipt
+            </button>
+          )}
+        </div>
       </div>
     </div>
   )
@@ -216,30 +270,35 @@ export default function Sales() {
   const [dateTo, setDateTo] = useState('')
 
   const totalPages = Math.ceil(count / PAGE_SIZE)
+  const hasFilters = search || status || payment || dateFrom || dateTo
 
   const fetchSales = useCallback(async (pg = 1) => {
     setLoading(true)
     try {
       const params = { page: pg, page_size: PAGE_SIZE }
-      if (search)  params.search  = search
-      if (status)  params.status  = status
-      if (payment) params.payment_method = payment
-      // date range passed as search or custom filter if backend supports it
+      if (search)   params.search          = search
+      if (status)   params.status          = status
+      if (payment)  params.payment_method  = payment
+      if (dateFrom) params.date_from       = dateFrom
+      if (dateTo)   params.date_to         = dateTo
       const data = await api.sales.list(params)
       setSales(data.results || data)
       setCount(data.count || (data.results || data).length)
     } finally { setLoading(false) }
   }, [search, status, payment, dateFrom, dateTo])
 
+  // Reset to page 1 when filters change
   useEffect(() => { setPage(1); fetchSales(1) }, [search, status, payment, dateFrom, dateTo])
-  useEffect(() => { fetchSales(page) }, [page])
+  // Fetch when page changes (but not on filter change — above handles that)
+  useEffect(() => { fetchSales(page) }, [page]) // eslint-disable-line
 
-  // ── Export all matching records (up to 1000) ──────────────────────────────
   const fetchAllForExport = async () => {
     const params = { page: 1, page_size: 1000 }
-    if (search)  params.search  = search
-    if (status)  params.status  = status
-    if (payment) params.payment_method = payment
+    if (search)   params.search         = search
+    if (status)   params.status         = status
+    if (payment)  params.payment_method = payment
+    if (dateFrom) params.date_from      = dateFrom
+    if (dateTo)   params.date_to        = dateTo
     const data = await api.sales.list(params)
     return data.results || data
   }
@@ -249,26 +308,25 @@ export default function Sales() {
     try {
       const all = await fetchAllForExport()
       const rows = all.map(s => ({
-        'Receipt No':    s.receipt_number,
-        'Date':          fmt.datetime(s.created_at),
-        'Customer':      s.customer_name || 'Walk-in',
-        'Served By':     s.served_by_name || '',
-        'Payment':       s.payment_method,
-        'M-Pesa Ref':    s.mpesa_reference || '',
-        'Subtotal':      parseFloat(s.subtotal),
-        'Discount':      parseFloat(s.discount),
-        'Tax':           parseFloat(s.tax),
-        'Total (KES)':   parseFloat(s.total_amount),
-        'Amount Paid':   parseFloat(s.amount_paid),
-        'Change Given':  parseFloat(s.change_given),
-        'Status':        s.status,
+        'Receipt No':   s.receipt_number,
+        'Date':         fmt.datetime(s.created_at),
+        'Customer':     s.customer_name || 'Walk-in',
+        'Served By':    s.served_by_name || '',
+        'Payment':      s.payment_method === 'mpesa' ? 'M-Pesa' : s.payment_method,
+        'M-Pesa Ref':   s.mpesa_reference || '',
+        'Subtotal':     parseFloat(s.subtotal),
+        'Discount':     parseFloat(s.discount),
+        'Tax':          parseFloat(s.tax),
+        'Total (KES)':  parseFloat(s.total_amount),
+        'Amount Paid':  parseFloat(s.amount_paid),
+        'Change Given': parseFloat(s.change_given),
+        'Status':       s.status,
       }))
       const ws = XLSX.utils.json_to_sheet(rows)
-      // Column widths
       ws['!cols'] = [18,20,20,18,12,16,12,10,8,14,14,14,12].map(w => ({ wch: w }))
       const wb = XLSX.utils.book_new()
       XLSX.utils.book_append_sheet(wb, ws, 'Sales')
-      XLSX.writeFile(wb, `sales-report-${new Date().toISOString().slice(0,10)}.xlsx`)
+      XLSX.writeFile(wb, `sales-${new Date().toISOString().slice(0,10)}.xlsx`)
     } finally { setExporting(false) }
   }
 
@@ -280,174 +338,165 @@ export default function Sales() {
     } finally { setExporting(false) }
   }
 
-  // ── Summary stats from current page ──────────────────────────────────────
-  const pageTotal   = sales.reduce((s, r) => s + parseFloat(r.total_amount || 0), 0)
-  const completedN  = sales.filter(s => s.status === 'completed').length
+  const clearFilters = () => {
+    setSearch(''); setStatus(''); setPayment(''); setDateFrom(''); setDateTo('')
+  }
+
+  // Page-level summary stats
+  const pageRevenue  = sales.reduce((s, r) => s + parseFloat(r.total_amount || 0), 0)
+  const completedCnt = sales.filter(s => s.status === 'completed').length
+  const refundedCnt  = sales.filter(s => s.status === 'refunded').length
 
   return (
-    <div style={{ padding: '24px', minHeight: '100vh', background: '#f8fafc' }}>
+    <div className="page-body">
 
-      {/* ── Page header ─────────────────────────────────────────────── */}
-      <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginBottom: 24, flexWrap: 'wrap', gap: 12 }}>
+      {/* ── Page header ──────────────────────────────────────────────── */}
+      <div className="page-header">
         <div>
-          <h1 style={{ fontSize: 24, fontWeight: 800, color: '#0f172a', margin: 0 }}>Sales</h1>
-          <p style={{ fontSize: 13, color: '#94a3b8', marginTop: 4 }}>
-            {count.toLocaleString()} total records
-          </p>
+          <h1>
+            <i className="bi bi-receipt" style={{ marginRight: 10, color: 'var(--primary)' }} />
+            Sales
+          </h1>
+          <p>{count.toLocaleString()} total records</p>
         </div>
-        <div style={{ display: 'flex', gap: 8 }}>
+        <div className="d-flex gap-2">
           <button
+            className="btn btn-outline btn-sm"
             onClick={exportXLSX}
-            disabled={exporting}
-            style={{
-              display: 'flex', alignItems: 'center', gap: 6,
-              padding: '8px 16px', borderRadius: 8, border: '1px solid #e2e8f0',
-              background: 'white', fontSize: 13, fontWeight: 600, cursor: 'pointer',
-              color: '#16a34a', transition: 'all .15s',
-            }}
-            onMouseEnter={e => e.currentTarget.style.background = '#f0fdf4'}
-            onMouseLeave={e => e.currentTarget.style.background = 'white'}
+            disabled={exporting || loading}
           >
-            <span>📊</span> {exporting ? 'Exporting…' : 'Export XLSX'}
+            {exporting
+              ? <><div className="spinner" style={{ width: 14, height: 14 }} /> Exporting…</>
+              : <><i className="bi bi-file-earmark-spreadsheet" /> Export XLSX</>
+            }
           </button>
           <button
+            className="btn btn-outline btn-sm"
             onClick={exportPDF}
-            disabled={exporting}
-            style={{
-              display: 'flex', alignItems: 'center', gap: 6,
-              padding: '8px 16px', borderRadius: 8, border: '1px solid #e2e8f0',
-              background: 'white', fontSize: 13, fontWeight: 600, cursor: 'pointer',
-              color: '#dc2626', transition: 'all .15s',
-            }}
-            onMouseEnter={e => e.currentTarget.style.background = '#fef2f2'}
-            onMouseLeave={e => e.currentTarget.style.background = 'white'}
+            disabled={exporting || loading}
+            style={{ color: 'var(--danger)', borderColor: 'var(--danger)' }}
+            onMouseEnter={e => e.currentTarget.style.background = 'var(--danger-light)'}
+            onMouseLeave={e => e.currentTarget.style.background = ''}
           >
-            <span>📄</span> {exporting ? 'Exporting…' : 'Export PDF'}
+            {exporting
+              ? <><div className="spinner" style={{ width: 14, height: 14 }} /> Exporting…</>
+              : <><i className="bi bi-file-earmark-pdf" /> Export PDF</>
+            }
           </button>
         </div>
       </div>
 
-      {/* ── Quick stats ─────────────────────────────────────────────── */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px,1fr))', gap: 12, marginBottom: 24 }}>
+      {/* ── Stats row ────────────────────────────────────────────────── */}
+      <div className="grid-4 mb-4">
         {[
-          { label: 'This Page Revenue', value: fmt.currency(pageTotal), icon: '💰', color: '#2563eb' },
-          { label: 'Completed (page)',   value: completedN,              icon: '✅', color: '#16a34a' },
-          { label: 'Total Records',      value: count.toLocaleString(),  icon: '🧾', color: '#7c3aed' },
-          { label: 'Total Pages',        value: totalPages,              icon: '📑', color: '#0891b2' },
-        ].map(stat => (
-          <div key={stat.label} style={{
-            background: 'white', borderRadius: 12, padding: '14px 16px',
-            border: '1px solid #f1f5f9', boxShadow: '0 1px 3px rgba(0,0,0,.04)',
-          }}>
-            <div style={{ fontSize: 22, marginBottom: 4 }}>{stat.icon}</div>
-            <div style={{ fontSize: 18, fontWeight: 800, color: stat.color }}>{stat.value}</div>
-            <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>{stat.label}</div>
+          { icon: 'bi-currency-exchange', label: 'Page Revenue',   value: fmt.currency(pageRevenue),  cls: 'text-primary' },
+          { icon: 'bi-check-circle',      label: 'Completed',      value: completedCnt,               cls: 'text-success' },
+          { icon: 'bi-arrow-counterclockwise', label: 'Refunded',  value: refundedCnt,                cls: 'text-warning' },
+          { icon: 'bi-collection',        label: 'Total Records',  value: count.toLocaleString(),     cls: '' },
+        ].map(s => (
+          <div key={s.label} className="card stat-card">
+            <div className="card-title">
+              <i className={`bi ${s.icon}`} style={{ marginRight: 5 }} />{s.label}
+            </div>
+            <div className={`card-value ${s.cls}`}>{s.value}</div>
+            <i className={`bi ${s.icon} stat-icon`} />
           </div>
         ))}
       </div>
 
-      {/* ── Filters ─────────────────────────────────────────────────── */}
-      <div style={{
-        background: 'white', borderRadius: 12, padding: '14px 16px',
-        border: '1px solid #f1f5f9', marginBottom: 16,
-        display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center',
-      }}>
-        {/* Search */}
-        <div style={{ position: 'relative', flex: '1 1 220px', minWidth: 180 }}>
-          <span style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', fontSize: 14, color: '#94a3b8' }}>🔍</span>
-          <input
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            placeholder="Receipt, customer, M-Pesa ref…"
-            style={{
-              width: '100%', padding: '8px 10px 8px 32px', borderRadius: 8,
-              border: '1px solid #e2e8f0', fontSize: 13, outline: 'none',
-              boxSizing: 'border-box',
-            }}
-          />
-        </div>
+      {/* ── Filters ──────────────────────────────────────────────────── */}
+      <div className="card mb-4">
+        <div className="d-flex" style={{ flexWrap: 'wrap', gap: 10, alignItems: 'center' }}>
 
-        {/* Status */}
-        <select
-          value={status}
-          onChange={e => setStatus(e.target.value)}
-          style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid #e2e8f0', fontSize: 13, background: 'white', cursor: 'pointer', minWidth: 130 }}
-        >
-          <option value="">All Statuses</option>
-          <option value="completed">Completed</option>
-          <option value="pending">Pending</option>
-          <option value="refunded">Refunded</option>
-          <option value="cancelled">Cancelled</option>
-        </select>
+          {/* Search */}
+          <div className="search-bar" style={{ flex: '1 1 220px', minWidth: 180 }}>
+            <i className="bi bi-search" />
+            <input
+              className="form-control"
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="Receipt, customer, M-Pesa ref…"
+            />
+          </div>
 
-        {/* Payment */}
-        <select
-          value={payment}
-          onChange={e => setPayment(e.target.value)}
-          style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid #e2e8f0', fontSize: 13, background: 'white', cursor: 'pointer', minWidth: 130 }}
-        >
-          <option value="">All Payments</option>
-          <option value="cash">Cash</option>
-          <option value="mpesa">M-Pesa</option>
-          <option value="card">Card</option>
-          <option value="insurance">Insurance</option>
-        </select>
-
-        {/* Date range */}
-        <input
-          type="date" value={dateFrom}
-          onChange={e => setDateFrom(e.target.value)}
-          style={{ padding: '8px 10px', borderRadius: 8, border: '1px solid #e2e8f0', fontSize: 13, background: 'white', cursor: 'pointer' }}
-        />
-        <span style={{ color: '#94a3b8', fontSize: 12 }}>to</span>
-        <input
-          type="date" value={dateTo}
-          onChange={e => setDateTo(e.target.value)}
-          style={{ padding: '8px 10px', borderRadius: 8, border: '1px solid #e2e8f0', fontSize: 13, background: 'white', cursor: 'pointer' }}
-        />
-
-        {/* Clear */}
-        {(search || status || payment || dateFrom || dateTo) && (
-          <button
-            onClick={() => { setSearch(''); setStatus(''); setPayment(''); setDateFrom(''); setDateTo('') }}
-            style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid #fecaca', background: '#fef2f2', fontSize: 13, color: '#dc2626', cursor: 'pointer', fontWeight: 600 }}
+          {/* Status */}
+          <select
+            className="form-control"
+            value={status}
+            onChange={e => setStatus(e.target.value)}
+            style={{ width: 'auto', minWidth: 140 }}
           >
-            ✕ Clear
-          </button>
-        )}
+            <option value="">All Statuses</option>
+            <option value="completed">Completed</option>
+            <option value="pending">Pending</option>
+            <option value="refunded">Refunded</option>
+            <option value="cancelled">Cancelled</option>
+          </select>
+
+          {/* Payment */}
+          <select
+            className="form-control"
+            value={payment}
+            onChange={e => setPayment(e.target.value)}
+            style={{ width: 'auto', minWidth: 140 }}
+          >
+            <option value="">All Payments</option>
+            <option value="cash">Cash</option>
+            <option value="mpesa">M-Pesa</option>
+            <option value="card">Card</option>
+            <option value="insurance">Insurance</option>
+          </select>
+
+          {/* Date range */}
+          <div className="d-flex align-center gap-2">
+            <input
+              type="date" className="form-control" style={{ width: 'auto' }}
+              value={dateFrom} onChange={e => setDateFrom(e.target.value)}
+            />
+            <span className="text-muted text-sm">to</span>
+            <input
+              type="date" className="form-control" style={{ width: 'auto' }}
+              value={dateTo} onChange={e => setDateTo(e.target.value)}
+            />
+          </div>
+
+          {/* Clear filters */}
+          {hasFilters && (
+            <button className="btn btn-danger btn-sm" onClick={clearFilters}>
+              <i className="bi bi-x-circle" /> Clear
+            </button>
+          )}
+        </div>
       </div>
 
-      {/* ── Table ───────────────────────────────────────────────────── */}
-      <div style={{
-        background: 'white', borderRadius: 12,
-        border: '1px solid #f1f5f9', overflow: 'hidden',
-        boxShadow: '0 1px 3px rgba(0,0,0,.04)',
-      }}>
-        <div style={{ overflowX: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+      {/* ── Table ────────────────────────────────────────────────────── */}
+      <div className="card" style={{ padding: 0 }}>
+        <div className="table-wrap" style={{ borderRadius: 'var(--radius-lg)', border: 'none' }}>
+          <table>
             <thead>
-              <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
-                {['Receipt #', 'Date & Time', 'Customer', 'Served By', 'Payment', 'Total', 'Status', ''].map(h => (
-                  <th key={h} style={{
-                    padding: '10px 14px', textAlign: 'left', fontWeight: 700,
-                    fontSize: 11, color: '#64748b', textTransform: 'uppercase',
-                    letterSpacing: '0.5px', whiteSpace: 'nowrap',
-                  }}>{h}</th>
-                ))}
+              <tr>
+                <th><i className="bi bi-hash" style={{ marginRight: 4 }} />Receipt</th>
+                <th><i className="bi bi-calendar3" style={{ marginRight: 4 }} />Date &amp; Time</th>
+                <th><i className="bi bi-person" style={{ marginRight: 4 }} />Customer</th>
+                <th><i className="bi bi-person-badge" style={{ marginRight: 4 }} />Served By</th>
+                <th><i className="bi bi-credit-card" style={{ marginRight: 4 }} />Payment</th>
+                <th style={{ textAlign: 'right' }}><i className="bi bi-cash-stack" style={{ marginRight: 4 }} />Total</th>
+                <th>Status</th>
+                <th></th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
+                // Skeleton rows
                 Array.from({ length: 8 }).map((_, i) => (
-                  <tr key={i} style={{ borderBottom: '1px solid #f8fafc' }}>
-                    {Array.from({ length: 8 }).map((_, j) => (
-                      <td key={j} style={{ padding: '12px 14px' }}>
+                  <tr key={i}>
+                    {[120, 150, 110, 100, 80, 80, 70, 50].map((w, j) => (
+                      <td key={j}>
                         <div style={{
-                          height: 14, borderRadius: 4,
-                          background: 'linear-gradient(90deg,#f1f5f9 25%,#e2e8f0 50%,#f1f5f9 75%)',
+                          height: 13, borderRadius: 4, width: w,
+                          background: 'linear-gradient(90deg,var(--gray-100) 25%,var(--gray-200) 50%,var(--gray-100) 75%)',
                           backgroundSize: '200% 100%',
                           animation: 'shimmer 1.4s infinite',
-                          width: j === 0 ? 120 : j === 5 ? 80 : '80%',
                         }} />
                       </td>
                     ))}
@@ -455,56 +504,40 @@ export default function Sales() {
                 ))
               ) : sales.length === 0 ? (
                 <tr>
-                  <td colSpan={8} style={{ padding: 48, textAlign: 'center', color: '#94a3b8' }}>
-                    <div style={{ fontSize: 40, marginBottom: 8 }}>🧾</div>
-                    No sales found
+                  <td colSpan={8} style={{ textAlign: 'center', padding: '48px 0', color: 'var(--gray-400)' }}>
+                    <i className="bi bi-receipt" style={{ fontSize: 40, display: 'block', marginBottom: 10 }} />
+                    {hasFilters ? 'No sales match your filters.' : 'No sales recorded yet.'}
                   </td>
                 </tr>
-              ) : sales.map((sale, i) => (
-                <tr
-                  key={sale.id}
-                  style={{
-                    borderBottom: '1px solid #f8fafc',
-                    background: i % 2 === 0 ? 'white' : '#fafafa',
-                    transition: 'background .1s',
-                    cursor: 'pointer',
-                  }}
-                  onMouseEnter={e => e.currentTarget.style.background = '#f0f9ff'}
-                  onMouseLeave={e => e.currentTarget.style.background = i % 2 === 0 ? 'white' : '#fafafa'}
-                >
-                  <td style={{ padding: '11px 14px', fontWeight: 700, color: '#2563eb', whiteSpace: 'nowrap' }}>
-                    {sale.receipt_number}
+              ) : sales.map(sale => (
+                <tr key={sale.id}>
+                  <td>
+                    <span className="text-bold text-primary">{sale.receipt_number}</span>
                   </td>
-                  <td style={{ padding: '11px 14px', color: '#475569', whiteSpace: 'nowrap' }}>
+                  <td className="text-sm" style={{ color: 'var(--gray-600)', whiteSpace: 'nowrap' }}>
                     {fmt.datetime(sale.created_at)}
                   </td>
-                  <td style={{ padding: '11px 14px', color: '#334155' }}>
-                    {sale.customer_name || <span style={{ color: '#94a3b8', fontStyle: 'italic' }}>Walk-in</span>}
+                  <td>
+                    {sale.customer_name
+                      ? <span style={{ fontWeight: 500 }}>{sale.customer_name}</span>
+                      : <span className="text-muted" style={{ fontStyle: 'italic' }}>Walk-in</span>
+                    }
                   </td>
-                  <td style={{ padding: '11px 14px', color: '#475569' }}>
+                  <td className="text-sm" style={{ color: 'var(--gray-600)' }}>
                     {sale.served_by_name || '—'}
                   </td>
-                  <td style={{ padding: '11px 14px' }}>
-                    <PaymentBadge method={sale.payment_method} />
+                  <td><PaymentBadge method={sale.payment_method} /></td>
+                  <td style={{ textAlign: 'right' }}>
+                    <span className="text-bold">{fmt.currency(sale.total_amount)}</span>
                   </td>
-                  <td style={{ padding: '11px 14px', fontWeight: 700, color: '#0f172a', whiteSpace: 'nowrap' }}>
-                    {fmt.currency(sale.total_amount)}
-                  </td>
-                  <td style={{ padding: '11px 14px' }}>
-                    <StatusBadge status={sale.status} />
-                  </td>
-                  <td style={{ padding: '11px 14px' }}>
+                  <td><StatusBadge status={sale.status} /></td>
+                  <td>
                     <button
+                      className="btn btn-ghost btn-sm"
                       onClick={() => setSelectedSlug(sale.slug)}
-                      style={{
-                        padding: '4px 10px', borderRadius: 6, border: '1px solid #e2e8f0',
-                        background: 'white', fontSize: 12, cursor: 'pointer', fontWeight: 600,
-                        color: '#475569', transition: 'all .1s',
-                      }}
-                      onMouseEnter={e => { e.currentTarget.style.background = '#f1f5f9'; e.currentTarget.style.borderColor = '#cbd5e1' }}
-                      onMouseLeave={e => { e.currentTarget.style.background = 'white'; e.currentTarget.style.borderColor = '#e2e8f0' }}
+                      title="View details"
                     >
-                      View
+                      <i className="bi bi-eye" />
                     </button>
                   </td>
                 </tr>
@@ -513,64 +546,46 @@ export default function Sales() {
           </table>
         </div>
 
-        {/* ── Pagination ──────────────────────────────────────────── */}
+        {/* ── Pagination ───────────────────────────────────────────── */}
         {totalPages > 1 && (
-          <div style={{
-            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-            padding: '12px 16px', borderTop: '1px solid #f1f5f9',
+          <div className="d-flex justify-between align-center" style={{
+            padding: '12px 20px', borderTop: '1px solid var(--gray-100)',
             flexWrap: 'wrap', gap: 8,
           }}>
-            <div style={{ fontSize: 12, color: '#94a3b8' }}>
-              Showing {((page - 1) * PAGE_SIZE) + 1}–{Math.min(page * PAGE_SIZE, count)} of {count}
-            </div>
+            <span className="text-sm text-muted">
+              Showing {((page - 1) * PAGE_SIZE) + 1}–{Math.min(page * PAGE_SIZE, count)} of {count.toLocaleString()}
+            </span>
 
-            <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
-              {/* Prev */}
+            <div className="d-flex gap-2 align-center">
               <button
+                className="btn btn-outline btn-sm"
                 onClick={() => setPage(p => Math.max(1, p - 1))}
                 disabled={page === 1}
-                style={{
-                  padding: '6px 12px', borderRadius: 7, border: '1px solid #e2e8f0',
-                  background: page === 1 ? '#f8fafc' : 'white', fontSize: 13,
-                  cursor: page === 1 ? 'default' : 'pointer', color: page === 1 ? '#cbd5e1' : '#334155',
-                  fontWeight: 600,
-                }}
-              >‹ Prev</button>
+              >
+                <i className="bi bi-chevron-left" /> Prev
+              </button>
 
-              {/* Page numbers */}
-              {Array.from({ length: Math.min(7, totalPages) }, (_, i) => {
-                let pg
-                if (totalPages <= 7) pg = i + 1
-                else if (page <= 4) pg = i + 1
-                else if (page >= totalPages - 3) pg = totalPages - 6 + i
-                else pg = page - 3 + i
-                return pg
-              }).map(pg => (
+              {(() => {
+                let start = Math.max(1, page - 2)
+                let end   = Math.min(totalPages, start + 4)
+                if (end - start < 4) start = Math.max(1, end - 4)
+                return Array.from({ length: end - start + 1 }, (_, i) => start + i)
+              })().map(pg => (
                 <button
                   key={pg}
+                  className={`btn btn-sm ${pg === page ? 'btn-primary' : 'btn-ghost'}`}
                   onClick={() => setPage(pg)}
-                  style={{
-                    padding: '6px 11px', borderRadius: 7, border: '1px solid',
-                    borderColor: pg === page ? '#2563eb' : '#e2e8f0',
-                    background: pg === page ? '#2563eb' : 'white',
-                    color: pg === page ? 'white' : '#334155',
-                    fontSize: 13, fontWeight: pg === page ? 700 : 500,
-                    cursor: 'pointer', minWidth: 36,
-                  }}
+                  style={{ minWidth: 36 }}
                 >{pg}</button>
               ))}
 
-              {/* Next */}
               <button
+                className="btn btn-outline btn-sm"
                 onClick={() => setPage(p => Math.min(totalPages, p + 1))}
                 disabled={page === totalPages}
-                style={{
-                  padding: '6px 12px', borderRadius: 7, border: '1px solid #e2e8f0',
-                  background: page === totalPages ? '#f8fafc' : 'white', fontSize: 13,
-                  cursor: page === totalPages ? 'default' : 'pointer',
-                  color: page === totalPages ? '#cbd5e1' : '#334155', fontWeight: 600,
-                }}
-              >Next ›</button>
+              >
+                Next <i className="bi bi-chevron-right" />
+              </button>
             </div>
           </div>
         )}
@@ -581,7 +596,6 @@ export default function Sales() {
         <SaleDetailModal slug={selectedSlug} onClose={() => setSelectedSlug(null)} />
       )}
 
-      {/* Shimmer keyframes */}
       <style>{`
         @keyframes shimmer {
           0%   { background-position: 200% 0 }
